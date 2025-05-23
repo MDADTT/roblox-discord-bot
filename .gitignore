@@ -1,0 +1,14 @@
+# Node modules folder
+node_modules/
+
+# Environment variables file
+.env
+
+#logs
+logs
+*.log
+npm-debug.log*
+
+# Optional: OS files
+.DS_Store
+Thumbs.db
