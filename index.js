@@ -1,5 +1,4 @@
 require('dotenv').config();
-c
 const {
   Client,
   GatewayIntentBits,
