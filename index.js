@@ -1,4 +1,5 @@
 require('dotenv').config();
+c
 const {
   Client,
   GatewayIntentBits,
@@ -74,11 +75,20 @@ const commands = [
 
 // Roblox login
 async function robloxLogin() {
+  if (!ROBLOX_COOKIE) {
+    throw new Error('ROBLOX_COOKIE environment variable is not set');
+  }
+  
   try {
     const currentUser = await noblox.setCookie(ROBLOX_COOKIE);
+    if (!currentUser || !currentUser.UserName) {
+      throw new Error('Failed to authenticate with Roblox');
+    }
     console.log(`Logged in to Roblox as ${currentUser.UserName}`);
+    return true;
   } catch (error) {
     console.error("Failed to login to Roblox:", error);
+    throw error;
   }
 }
 
@@ -118,7 +128,11 @@ function hasRankingPermission(member) {
 
 client.once("ready", async () => {
   console.log(`${client.user.tag} is online!`);
-  await robloxLogin();
+  try {
+    await robloxLogin();
+  } catch (error) {
+    console.error('Bot started but Roblox authentication failed:', error);
+  }
   
   // Register slash commands
   const rest = new REST().setToken(DISCORD_TOKEN);
@@ -402,5 +416,7 @@ client.on('interactionCreate', async interaction => {
     });
   }
 });
+
+client.login(DISCORD_TOKEN);
 
 client.login(DISCORD_TOKEN);
