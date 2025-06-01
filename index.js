@@ -468,7 +468,7 @@ client.on('interactionCreate', async interaction => {
           const errorMessage = error.code === 50007 
             ? "Cannot send DM to this user. They might have DMs disabled or blocked the bot."
             : "Failed to send DM. Please check the user ID and try again.";
-          
+
           await interaction.editReply({ 
             content: errorMessage
           });
@@ -480,7 +480,7 @@ client.on('interactionCreate', async interaction => {
         if (interaction.user.id !== '942051843306049576') {
           return interaction.reply({ 
             content: "Only the owner can use this command.",
-            ephemeral: true 
+            flags: 64
           });
         }
 
@@ -522,7 +522,7 @@ client.on('interactionCreate', async interaction => {
         if (interaction.user.id !== '942051843306049576') {
           return interaction.reply({ 
             content: "Only the owner can use this command.",
-            ephemeral: true 
+            flags: 64
           });
         }
 
@@ -547,7 +547,7 @@ client.on('interactionCreate', async interaction => {
         if (interaction.user.id !== '942051843306049576') {
           return interaction.reply({ 
             content: "Only the owner can use this command.",
-            ephemeral: true 
+            flags: 64
           });
         }
 
@@ -599,7 +599,7 @@ client.on('messageCreate', async (message) => {
       if (message.attachments.size > 0) {
         const attachments = message.attachments.map(att => att.url).join('\n');
         receivedEmbed.addFields({ name: 'Attachments', value: attachments, inline: false });
-        
+
         // If there's an image attachment, add it to the embed
         const imageAttachment = message.attachments.find(att => 
           att.contentType && att.contentType.startsWith('image/')
