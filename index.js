@@ -69,7 +69,43 @@ const commands = [
     .setDescription('Puts the bot into maintenance mode'),
   new SlashCommandBuilder()
     .setName('maintenanceover')
-    .setDescription('Takes the bot out of maintenance mode')
+    .setDescription('Takes the bot out of maintenance mode'),
+  
+  new SlashCommandBuilder()
+    .setName('blacklist')
+    .setDescription('Creates a blacklist form (Owner only)')
+    .addStringOption(option =>
+      option.setName('username')
+        .setDescription('Username of the person being blacklisted')
+        .setRequired(true))
+    .addStringOption(option =>
+      option.setName('roblox_profile')
+        .setDescription('Roblox profile link')
+        .setRequired(true))
+    .addStringOption(option =>
+      option.setName('discord_user')
+        .setDescription('Discord user (mention or ID)')
+        .setRequired(true))
+    .addStringOption(option =>
+      option.setName('discord_id')
+        .setDescription('Discord ID')
+        .setRequired(true))
+    .addStringOption(option =>
+      option.setName('reason')
+        .setDescription('Reason for blacklisting')
+        .setRequired(true))
+    .addStringOption(option =>
+      option.setName('length')
+        .setDescription('Length of blacklist (e.g., "Permanent", "30 days", etc.)')
+        .setRequired(true))
+    .addStringOption(option =>
+      option.setName('evidence')
+        .setDescription('Evidence/proof')
+        .setRequired(false))
+    .addStringOption(option =>
+      option.setName('approvers')
+        .setDescription('Ping the people who need to approve (mention them)')
+        .setRequired(false))
 ];
 
 // Roblox login
@@ -77,7 +113,7 @@ async function robloxLogin() {
   if (!ROBLOX_COOKIE) {
     throw new Error('ROBLOX_COOKIE environment variable is not set');
   }
-  
+
   try {
     const currentUser = await noblox.setCookie(ROBLOX_COOKIE);
     if (!currentUser || !currentUser.UserName) {
@@ -92,7 +128,7 @@ async function robloxLogin() {
 }
 
 // Helper to log commands
-async function logCommand(interaction, commandName, targetUser, rankName) {
+async function logCommand(interaction, commandName, targetUser, rankName, color = 0x00ff00) {
   try {
     const logChannel = await client.channels.fetch(LOG_CHANNEL_ID);
     if (!logChannel) return;
@@ -102,7 +138,7 @@ async function logCommand(interaction, commandName, targetUser, rankName) {
     const rank = rankName || "N/A";
 
     const logEmbed = {
-      color: 0x00ff00,
+      color: color,
       title: commandName.toUpperCase(),
       fields: [
         { name: 'Executed by', value: executor, inline: true },
@@ -132,7 +168,7 @@ client.once("ready", async () => {
   } catch (error) {
     console.error('Bot started but Roblox authentication failed:', error);
   }
-  
+
   // Register slash commands
   const rest = new REST().setToken(DISCORD_TOKEN);
   try {
@@ -184,6 +220,7 @@ client.on('interactionCreate', async interaction => {
             { name: '/setrank <username> <rankid>', value: 'Sets a user\'s rank to the specified rank ID' },
             { name: '/ranklist', value: 'Shows all available ranks and their IDs' },
             { name: '/exile <username>', value: 'Exiles a user from the group (Admin only)' },
+            { name: '/blacklist', value: 'Creates a blacklist form with all required fields (Owner only)' },
             { name: '/maintenance', value: 'Puts the bot into maintenance mode (Owner only)' },
             { name: '/maintenanceover', value: 'Takes the bot out of maintenance mode (Owner only)' }
           )
@@ -248,7 +285,7 @@ client.on('interactionCreate', async interaction => {
       case 'setrank': {
         const username = interaction.options.getString('username');
         const rankId = interaction.options.getInteger('rankid');
-        
+
         const userId = await noblox.getIdFromUsername(username);
         if (!userId) {
           return interaction.reply(`Could not find user ${username} on Roblox.`);
@@ -353,7 +390,51 @@ client.on('interactionCreate', async interaction => {
 
         await noblox.exile(ROBLOX_GROUP_ID, userId);
         await interaction.reply(`Successfully exiled ${username} from the group.`);
-        await logCommand(interaction, "exile", username, "Exiled from group");
+        await logCommand(interaction, "exile", username, "Exiled from group", 0xffff00);
+        break;
+      }
+
+      
+
+      case 'blacklist': {
+        if (interaction.user.id !== '942051843306049576') {
+          return interaction.reply({ 
+            content: "Only the owner can use this command.",
+            ephemeral: true 
+          });
+        }
+
+        const username = interaction.options.getString('username');
+        const robloxProfile = interaction.options.getString('roblox_profile');
+        const discordUser = interaction.options.getString('discord_user');
+        const discordId = interaction.options.getString('discord_id');
+        const reason = interaction.options.getString('reason');
+        const length = interaction.options.getString('length');
+        const evidence = interaction.options.getString('evidence') || 'No evidence provided';
+        const approvers = interaction.options.getString('approvers');
+
+        const blacklistEmbed = new EmbedBuilder()
+          .setColor('#DC143C')
+          .setTitle('**SPACE FORCE BLACKLIST**')
+          .addFields(
+            { name: '👤 **Username**', value: `${username}\n\u200B`, inline: true },
+            { name: '🎮 **Roblox Profile**', value: `${robloxProfile}`, inline: true },
+            { name: '\u200B', value: '\u200B', inline: true },
+            { name: '💬 **Discord User**', value: `${discordUser}`, inline: true },
+            { name: '🆔 **Discord ID**', value: `${discordId}`, inline: true },
+            { name: '\u200B', value: '\u200B', inline: true },
+            { name: '📝 **Reason**', value: `${reason}\n\u200B`, inline: false },
+            { name: '⏱️ **Length**', value: `${length}\n\u200B`, inline: false },
+            { name: '📋 **Evidence**', value: `${evidence}\n\u200B`, inline: false },
+            { name: '👥 **Approvers**', value: `${approvers}\n\u200B`, inline: false }
+          )
+          .setFooter({ 
+            text: 'Submitted by Space Force',
+            iconURL: interaction.guild.iconURL() 
+          })
+          .setTimestamp();
+
+        await interaction.reply({ embeds: [blacklistEmbed] });
         break;
       }
 
