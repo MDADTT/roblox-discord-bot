@@ -19,7 +19,12 @@ const ROBLOX_COOKIE = process.env.ROBLOX_COOKIE;
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.DirectMessages,
+    GatewayIntentBits.MessageContent
+  ],
+  partials: ['MESSAGE', 'CHANNEL', 'REACTION']
 });
 
 let isMaintenanceMode = false;
@@ -70,7 +75,17 @@ const commands = [
   new SlashCommandBuilder()
     .setName('maintenanceover')
     .setDescription('Takes the bot out of maintenance mode'),
-  
+  new SlashCommandBuilder()
+    .setName('dm')
+    .setDescription('Send a DM to a user (Owner only)')
+    .addStringOption(option =>
+      option.setName('user_id')
+        .setDescription('Discord user ID to send DM to')
+        .setRequired(true))
+    .addStringOption(option =>
+      option.setName('message')
+        .setDescription('Message to send')
+        .setRequired(true)),
   new SlashCommandBuilder()
     .setName('blacklist')
     .setDescription('Creates a blacklist form (Owner only)')
@@ -130,7 +145,15 @@ async function robloxLogin() {
 // Helper to log commands
 async function logCommand(interaction, commandName, targetUser, rankName, color = 0x00ff00) {
   try {
-    const logChannel = await client.channels.fetch(LOG_CHANNEL_ID);
+    // Use different channels based on command type
+    let channelId;
+    if (commandName === 'dm') {
+      channelId = '1377717185199214663';
+    } else {
+      channelId = '1375175189888766005';
+    }
+
+    const logChannel = await client.channels.fetch(channelId);
     if (!logChannel) return;
 
     const executor = `${interaction.user} (${interaction.user.tag})`;
@@ -220,6 +243,7 @@ client.on('interactionCreate', async interaction => {
             { name: '/setrank <username> <rankid>', value: 'Sets a user\'s rank to the specified rank ID' },
             { name: '/ranklist', value: 'Shows all available ranks and their IDs' },
             { name: '/exile <username>', value: 'Exiles a user from the group (Admin only)' },
+            { name: '/dm <user_id> <message>', value: 'Send a DM to a user by their ID (Owner only)' },
             { name: '/blacklist', value: 'Creates a blacklist form with all required fields (Owner only)' },
             { name: '/maintenance', value: 'Puts the bot into maintenance mode (Owner only)' },
             { name: '/maintenanceover', value: 'Takes the bot out of maintenance mode (Owner only)' }
@@ -394,7 +418,58 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
-      
+
+
+      case 'dm': {
+        if (interaction.user.id !== '942051843306049576') {
+          return interaction.reply({ 
+            content: "Only the owner can use this command.",
+            ephemeral: true 
+          });
+        }
+
+        const userId = interaction.options.getString('user_id');
+        const message = interaction.options.getString('message');
+        const logChannelId = '1377717185199214663';
+
+        // Validate user ID format
+        if (!/^\d{17,19}$/.test(userId)) {
+          return interaction.reply({ 
+            content: "Invalid user ID format. Please provide a valid Discord user ID.",
+            ephemeral: true 
+          });
+        }
+
+        try {
+          // Defer reply since this might take a moment
+          await interaction.deferReply({ ephemeral: true });
+
+          const user = await client.users.fetch(userId).catch(() => null);
+          if (!user) {
+            return interaction.editReply({ 
+              content: "Could not find user with that ID. Make sure the ID is correct."
+            });
+          }
+
+          // Try to send the DM
+          await user.send(message);
+
+          await interaction.editReply({ 
+            content: `✅ Successfully sent DM to ${user.tag}`
+          });
+
+        } catch (error) {
+          console.error('Error sending DM:', error);
+          const errorMessage = error.code === 50007 
+            ? "Cannot send DM to this user. They might have DMs disabled or blocked the bot."
+            : "Failed to send DM. Please check the user ID and try again.";
+          
+          await interaction.editReply({ 
+            content: errorMessage
+          });
+        }
+        break;
+      }
 
       case 'blacklist': {
         if (interaction.user.id !== '942051843306049576') {
@@ -497,6 +572,43 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-client.login(DISCORD_TOKEN);
+// Log received DMs
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
+  if (message.channel.type !== 1) return; // Only DMs (channel type 1)
+
+  const logChannelId = '1377717185199214663';
+  try {
+    const logChannel = await client.channels.fetch(logChannelId);
+    if (logChannel) {
+      const receivedEmbed = new EmbedBuilder()
+        .setColor('#ff9900')
+        .setTitle('📥 DM Received')
+        .addFields(
+          { name: 'From', value: `${message.author.tag} (${message.author.id})`, inline: true },
+          { name: 'To', value: `${client.user.tag} (Bot)`, inline: true },
+          { name: 'Message', value: message.content || 'No text content', inline: false }
+        )
+        .setTimestamp();
+
+      if (message.attachments.size > 0) {
+        const attachments = message.attachments.map(att => att.url).join('\n');
+        receivedEmbed.addFields({ name: 'Attachments', value: attachments, inline: false });
+        
+        // If there's an image attachment, add it to the embed
+        const imageAttachment = message.attachments.find(att => 
+          att.contentType && att.contentType.startsWith('image/')
+        );
+        if (imageAttachment) {
+          receivedEmbed.setImage(imageAttachment.url);
+        }
+      }
+
+      await logChannel.send({ embeds: [receivedEmbed] });
+    }
+  } catch (error) {
+    console.error('Error logging received DM:', error);
+  }
+});
 
 client.login(DISCORD_TOKEN);
