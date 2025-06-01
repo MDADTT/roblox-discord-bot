@@ -130,14 +130,19 @@ async function robloxLogin() {
   }
 
   try {
+    console.log('Attempting to authenticate with Roblox...');
     const currentUser = await noblox.setCookie(ROBLOX_COOKIE);
     if (!currentUser || !currentUser.UserName) {
-      throw new Error('Failed to authenticate with Roblox');
+      throw new Error('Failed to authenticate with Roblox - Invalid cookie or account issue');
     }
-    console.log(`Logged in to Roblox as ${currentUser.UserName}`);
+    console.log(`Successfully logged in to Roblox as ${currentUser.UserName}`);
     return true;
   } catch (error) {
-    console.error("Failed to login to Roblox:", error);
+    console.error("Failed to login to Roblox:", error.message);
+    if (error.message.includes('CSRF') || error.message.includes('not logged in')) {
+      console.error('This usually means the Roblox cookie has expired or is invalid.');
+      console.error('Please get a fresh .ROBLOSECURITY cookie from your browser and update the environment variable.');
+    }
     throw error;
   }
 }
