@@ -15,7 +15,11 @@ const noblox = require("noblox.js");
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const ROBLOX_GROUP_ID = process.env.ROBLOX_GROUP_ID;
-const ROBLOX_COOKIE = process.enc.ROBLOX_COOKIE;
+const ROBLOX_COOKIE = process.env.ROBLOX_COOKIE;
+const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
+
+const client = new Client({
+  intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.DirectMessages,
     GatewayIntentBits.MessageContent
@@ -78,7 +82,7 @@ const commands = [
         .setRequired(false))
 ];
 
-// Roblox login
+// Roblox login with Railway compatibility
 async function robloxLogin() {
   if (!ROBLOX_COOKIE) {
     throw new Error('ROBLOX_COOKIE environment variable is not set');
@@ -86,19 +90,78 @@ async function robloxLogin() {
 
   try {
     console.log('Attempting to authenticate with Roblox...');
-const currentUserId = await noblox.setCookie(ROBLOX_COOKIE);
-if (!currentUserId || typeof currentUserId !== 'number') {
-  throw new Error('Failed to authenticate with Roblox - Invalid cookie or account issue');
-}
-const currentUserName = await noblox.getUsernameFromId(currentUserId);
-console.log(`Successfully logged in to Roblox as ${currentUserName}`);
+    
+    // Clean the cookie - remove any whitespace or formatting issues
+    const cleanCookie = ROBLOX_COOKIE.trim();
+    
+    // Set longer timeout for Railway environment
+    const originalTimeout = process.env.AXIOS_TIMEOUT;
+    process.env.AXIOS_TIMEOUT = '30000'; // 30 seconds
+    
+    // Try authentication with retry logic
+    let currentUser = null;
+    let lastError = null;
+    
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        console.log(`Authentication attempt ${attempt}/3...`);
+        
+        // Set the cookie
+        currentUser = await noblox.setCookie(cleanCookie);
+        
+        if (currentUser && currentUser.UserName) {
+          console.log(`Successfully logged in to Roblox as ${currentUser.UserName}`);
+          
+          // Restore original timeout
+          if (originalTimeout) {
+            process.env.AXIOS_TIMEOUT = originalTimeout;
+          } else {
+            delete process.env.AXIOS_TIMEOUT;
+          }
+          
+          return true;
+        }
+        
+        // If no user returned, wait and retry
+        if (attempt < 3) {
+          console.log('No user returned, retrying in 2 seconds...');
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+        
+      } catch (error) {
+        lastError = error;
+        console.error(`Attempt ${attempt} failed:`, error.message);
+        
+        if (attempt < 3) {
+          console.log('Retrying in 3 seconds...');
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
+      }
+    }
+    
+    // Restore original timeout
+    if (originalTimeout) {
+      process.env.AXIOS_TIMEOUT = originalTimeout;
+    } else {
+      delete process.env.AXIOS_TIMEOUT;
+    }
+    
+    throw new Error(`Failed to authenticate after 3 attempts. Last error: ${lastError?.message || 'Unknown error'}`);
+    
   } catch (error) {
     console.error("Failed to login to Roblox:", error.message);
+    
     if (error.message.includes('CSRF') || error.message.includes('not logged in')) {
-      console.error('This usually means the Roblox cookie has expired or is invalid.');
-      console.error('Please get a fresh .ROBLOSECURITY cookie from your browser and update the environment variable.');
+      console.error('Cookie authentication failed. Possible causes:');
+      console.error('1. Cookie has expired - get a fresh .ROBLOSECURITY cookie');
+      console.error('2. Account has 2FA enabled - disable temporarily');
+      console.error('3. IP restrictions - check if Railway IP is blocked');
+      console.error('4. Roblox is experiencing issues');
     }
-    throw error;
+    
+    // Don't throw the error to prevent bot from crashing
+    console.error('Bot will continue running but Roblox features will be disabled');
+    return false;
   }
 }
 
@@ -156,10 +219,12 @@ async function hasHighRank(userId) {
 
 client.once("ready", async () => {
   console.log(`${client.user.tag} is online!`);
-  try {
-    await robloxLogin();
-  } catch (error) {
-    console.error('Bot started but Roblox authentication failed:', error);
+  
+  // Try to authenticate with Roblox
+  const authSuccess = await robloxLogin();
+  
+  if (!authSuccess) {
+    console.log('Roblox authentication failed - some commands will be disabled');
   }
 
   // Register slash commands
@@ -227,6 +292,20 @@ client.on('interactionCreate', async interaction => {
     } catch (error) {
       return interaction.reply({ 
         content: "Error checking your Roblox rank. Please try again.",
+        ephemeral: true 
+      });
+    }
+  }
+
+  // Check if Roblox authentication is working for commands that need it
+  const needsRoblox = ['promote', 'demote', 'setrank', 'ranklist', 'exile'];
+  if (needsRoblox.includes(commandName)) {
+    try {
+      // Quick test to see if we're still authenticated
+      await noblox.getCurrentUser();
+    } catch (error) {
+      return interaction.reply({ 
+        content: "❌ Roblox authentication is not working. The bot owner needs to update the Roblox cookie.",
         ephemeral: true 
       });
     }
