@@ -90,12 +90,12 @@ async function robloxLogin() {
 
   try {
     console.log('Attempting to authenticate with Roblox...');
-    const currentUser = await noblox.setCookie(ROBLOX_COOKIE);
-    if (!currentUser || !currentUser.UserName) {
-      throw new Error('Failed to authenticate with Roblox - Invalid cookie or account issue');
-    }
-    console.log(`Successfully logged in to Roblox as ${currentUser.UserName}`);
-    return true;
+const currentUserId = await noblox.setCookie(ROBLOX_COOKIE);
+if (!currentUserId || typeof currentUserId !== 'number') {
+  throw new Error('Failed to authenticate with Roblox - Invalid cookie or account issue');
+}
+const currentUserName = await noblox.getUsernameFromId(currentUserId);
+console.log(`Successfully logged in to Roblox as ${currentUserName}`);
   } catch (error) {
     console.error("Failed to login to Roblox:", error.message);
     if (error.message.includes('CSRF') || error.message.includes('not logged in')) {
