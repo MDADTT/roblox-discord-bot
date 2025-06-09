@@ -70,56 +70,15 @@ const commands = [
         .setDescription('Roblox username')
         .setRequired(true)),
   new SlashCommandBuilder()
-    .setName('maintenance')
-    .setDescription('Puts the bot into maintenance mode'),
-  new SlashCommandBuilder()
-    .setName('maintenanceover')
-    .setDescription('Takes the bot out of maintenance mode'),
-  new SlashCommandBuilder()
-    .setName('dm')
-    .setDescription('Send a DM to a user (Owner only)')
-    .addStringOption(option =>
-      option.setName('user_id')
-        .setDescription('Discord user ID to send DM to')
-        .setRequired(true))
+    .setName('say')
+    .setDescription('Send a message as the bot (Owner only)')
     .addStringOption(option =>
       option.setName('message')
         .setDescription('Message to send')
-        .setRequired(true)),
-  new SlashCommandBuilder()
-    .setName('blacklist')
-    .setDescription('Creates a blacklist form (Owner only)')
-    .addStringOption(option =>
-      option.setName('username')
-        .setDescription('Username of the person being blacklisted')
         .setRequired(true))
-    .addStringOption(option =>
-      option.setName('roblox_profile')
-        .setDescription('Roblox profile link')
-        .setRequired(true))
-    .addStringOption(option =>
-      option.setName('discord_user')
-        .setDescription('Discord user (mention or ID)')
-        .setRequired(true))
-    .addStringOption(option =>
-      option.setName('discord_id')
-        .setDescription('Discord ID')
-        .setRequired(true))
-    .addStringOption(option =>
-      option.setName('reason')
-        .setDescription('Reason for blacklisting')
-        .setRequired(true))
-    .addStringOption(option =>
-      option.setName('length')
-        .setDescription('Length of blacklist (e.g., "Permanent", "30 days", etc.)')
-        .setRequired(true))
-    .addStringOption(option =>
-      option.setName('evidence')
-        .setDescription('Evidence/proof')
-        .setRequired(false))
-    .addStringOption(option =>
-      option.setName('approvers')
-        .setDescription('Ping the people who need to approve (mention them)')
+    .addChannelOption(option =>
+      option.setName('channel')
+        .setDescription('Channel to send the message to (optional)')
         .setRequired(false))
 ];
 
@@ -155,7 +114,7 @@ async function logCommand(interaction, commandName, targetUser, rankName, color 
     if (commandName === 'dm') {
       channelId = '1377717185199214663';
     } else {
-      channelId = '1375175189888766005';
+      channelId = LOG_CHANNEL_ID;
     }
 
     const logChannel = await client.channels.fetch(channelId);
@@ -182,11 +141,21 @@ async function logCommand(interaction, commandName, targetUser, rankName, color 
   }
 }
 
-// Check for ranking permission
-function hasRankingPermission(member) {
-  const allowedRoleName = 'Ranking Permission';
-  return member && (member.roles.cache.some(role => role.name === allowedRoleName) || 
-         member.permissions.has(PermissionsBitField.Flags.Administrator));
+// Check for specific role permission
+function hasSpecificRole(member) {
+  const allowedRoleId = '1380255168255230117';
+  return member && member.roles.cache.has(allowedRoleId);
+}
+
+// Check if user has rank 40+ in Roblox group
+async function hasHighRank(userId) {
+  try {
+    const rank = await noblox.getRankInGroup(ROBLOX_GROUP_ID, userId);
+    return rank >= 40;
+  } catch (error) {
+    console.error('Error checking user rank:', error);
+    return false;
+  }
 }
 
 client.once("ready", async () => {
@@ -214,16 +183,8 @@ client.once("ready", async () => {
 client.on('interactionCreate', async interaction => {
   if (!interaction.isCommand()) return;
 
-  if (!hasRankingPermission(interaction.member) && 
-      !['maintenance', 'maintenanceover'].includes(interaction.commandName)) {
-    return interaction.reply({ 
-      content: "You need the 'Ranking Permission' role to use ranking commands.",
-      ephemeral: true 
-    });
-  }
-
-  if (isMaintenanceMode && interaction.user.id !== '942051843306049576' &&
-      !['maintenance', 'maintenanceover'].includes(interaction.commandName)) {
+  // Check maintenance mode first
+  if (isMaintenanceMode && interaction.user.id !== '942051843306049576') {
     const embed = new EmbedBuilder()
       .setColor('#FF0000')
       .setTitle('**Bot Unavailable**')
@@ -232,6 +193,47 @@ client.on('interactionCreate', async interaction => {
       .setTimestamp();
 
     return interaction.reply({ embeds: [embed], ephemeral: true });
+  }
+
+  // Permission checks based on command
+  const commandName = interaction.commandName;
+  
+  // Commands that require specific role
+  if (['promote', 'demote', 'setrank'].includes(commandName)) {
+    if (!hasSpecificRole(interaction.member)) {
+      return interaction.reply({ 
+        content: "You need the required role to use ranking commands.",
+        ephemeral: true 
+      });
+    }
+  }
+  
+  // Exile command requires rank 40+ in Roblox group
+  if (commandName === 'exile') {
+    try {
+      const username = interaction.options.getString('username');
+      const userId = await noblox.getIdFromUsername(interaction.user.username);
+      
+      if (!userId) {
+        return interaction.reply({ 
+          content: "Could not find your Roblox account. Make sure your Discord username matches your Roblox username.",
+          ephemeral: true 
+        });
+      }
+      
+      const hasRank = await hasHighRank(userId);
+      if (!hasRank) {
+        return interaction.reply({ 
+          content: "You need to be rank 40 or higher in the Roblox group to use the exile command.",
+          ephemeral: true 
+        });
+      }
+    } catch (error) {
+      return interaction.reply({ 
+        content: "Error checking your Roblox rank. Please try again.",
+        ephemeral: true 
+      });
+    }
   }
 
   try {
@@ -247,11 +249,7 @@ client.on('interactionCreate', async interaction => {
             { name: '/demote <username>', value: 'Demotes a user one rank down in the group' },
             { name: '/setrank <username> <rankid>', value: 'Sets a user\'s rank to the specified rank ID' },
             { name: '/ranklist', value: 'Shows all available ranks and their IDs' },
-            { name: '/exile <username>', value: 'Exiles a user from the group (Admin only)' },
-            { name: '/dm <user_id> <message>', value: 'Send a DM to a user by their ID (Owner only)' },
-            { name: '/blacklist', value: 'Creates a blacklist form with all required fields (Owner only)' },
-            { name: '/maintenance', value: 'Puts the bot into maintenance mode (Owner only)' },
-            { name: '/maintenanceover', value: 'Takes the bot out of maintenance mode (Owner only)' }
+            { name: '/exile <username>', value: 'Exiles a user from the group (Admin only)' }
           )
           .setFooter({ text: 'Use these commands responsibly!', iconURL: client.user.displayAvatarURL() })
           .setTimestamp();
@@ -423,148 +421,30 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
-
-
-      case 'dm': {
+      case 'say': {
+        // Only allow bot owner to use this command
         if (interaction.user.id !== '942051843306049576') {
           return interaction.reply({ 
-            content: "Only the owner can use this command.",
+            content: "Only the bot owner can use this command.",
             ephemeral: true 
           });
         }
 
-        const userId = interaction.options.getString('user_id');
         const message = interaction.options.getString('message');
-        const logChannelId = '1377717185199214663';
-
-        // Validate user ID format
-        if (!/^\d{17,19}$/.test(userId)) {
-          return interaction.reply({ 
-            content: "Invalid user ID format. Please provide a valid Discord user ID.",
-            ephemeral: true 
-          });
-        }
+        const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
 
         try {
-          // Defer reply since this might take a moment
-          await interaction.deferReply({ ephemeral: true });
-
-          const user = await client.users.fetch(userId).catch(() => null);
-          if (!user) {
-            return interaction.editReply({ 
-              content: "Could not find user with that ID. Make sure the ID is correct."
-            });
-          }
-
-          // Try to send the DM
-          await user.send(message);
-
-          await interaction.editReply({ 
-            content: `✅ Successfully sent DM to ${user.tag}`
+          await targetChannel.send(message);
+          await interaction.reply({ 
+            content: `Message sent to ${targetChannel.name}`,
+            ephemeral: true 
           });
-
         } catch (error) {
-          console.error('Error sending DM:', error);
-          const errorMessage = error.code === 50007 
-            ? "Cannot send DM to this user. They might have DMs disabled or blocked the bot."
-            : "Failed to send DM. Please check the user ID and try again.";
-
-          await interaction.editReply({ 
-            content: errorMessage
+          await interaction.reply({ 
+            content: "Failed to send message. Make sure I have permission to send messages in that channel.",
+            ephemeral: true 
           });
         }
-        break;
-      }
-
-      case 'blacklist': {
-        if (interaction.user.id !== '942051843306049576') {
-          return interaction.reply({ 
-            content: "Only the owner can use this command.",
-            flags: 64
-          });
-        }
-
-        const username = interaction.options.getString('username');
-        const robloxProfile = interaction.options.getString('roblox_profile');
-        const discordUser = interaction.options.getString('discord_user');
-        const discordId = interaction.options.getString('discord_id');
-        const reason = interaction.options.getString('reason');
-        const length = interaction.options.getString('length');
-        const evidence = interaction.options.getString('evidence') || 'No evidence provided';
-        const approvers = interaction.options.getString('approvers');
-
-        const blacklistEmbed = new EmbedBuilder()
-          .setColor('#DC143C')
-          .setTitle('**SPACE FORCE BLACKLIST**')
-          .addFields(
-            { name: '👤 **Username**', value: `${username}\n\u200B`, inline: true },
-            { name: '🎮 **Roblox Profile**', value: `${robloxProfile}`, inline: true },
-            { name: '\u200B', value: '\u200B', inline: true },
-            { name: '💬 **Discord User**', value: `${discordUser}`, inline: true },
-            { name: '🆔 **Discord ID**', value: `${discordId}`, inline: true },
-            { name: '\u200B', value: '\u200B', inline: true },
-            { name: '📝 **Reason**', value: `${reason}\n\u200B`, inline: false },
-            { name: '⏱️ **Length**', value: `${length}\n\u200B`, inline: false },
-            { name: '📋 **Evidence**', value: `${evidence}\n\u200B`, inline: false },
-            { name: '👥 **Approvers**', value: `${approvers}\n\u200B`, inline: false }
-          )
-          .setFooter({ 
-            text: 'Submitted by Space Force',
-            iconURL: interaction.guild.iconURL() 
-          })
-          .setTimestamp();
-
-        await interaction.reply({ embeds: [blacklistEmbed] });
-        break;
-      }
-
-      case 'maintenance': {
-        if (interaction.user.id !== '942051843306049576') {
-          return interaction.reply({ 
-            content: "Only the owner can use this command.",
-            flags: 64
-          });
-        }
-
-        isMaintenanceMode = true;
-        const embed = new EmbedBuilder()
-          .setColor('#FF0000')
-          .setTitle('**Maintenance Mode Activated**')
-          .setDescription('The bot is currently undergoing maintenance.\nPlease stand by — we\'ll be back shortly!')
-          .setThumbnail('https://cdn-icons-png.flaticon.com/512/189/189792.png')
-          .addFields(
-            { name: 'Status', value: 'Under Maintenance', inline: true },
-            { name: 'ETA', value: 'Soon', inline: true }
-          )
-          .setFooter({ text: 'Thank you for your patience!', iconURL: client.user.displayAvatarURL() })
-          .setTimestamp();
-
-        await interaction.reply({ embeds: [embed] });
-        break;
-      }
-
-      case 'maintenanceover': {
-        if (interaction.user.id !== '942051843306049576') {
-          return interaction.reply({ 
-            content: "Only the owner can use this command.",
-            flags: 64
-          });
-        }
-
-        isMaintenanceMode = false;
-        const embed = new EmbedBuilder()
-          .setColor('#00FF00')
-          .setTitle('**Maintenance Complete**')
-          .setDescription('The bot is back online and ready to serve you!')
-          .setThumbnail('https://cdn-icons-png.flaticon.com/512/190/190411.png')
-          .addFields(
-            { name: 'Status', value: 'Online', inline: true },
-            { name: 'All Systems', value: 'Operational', inline: true }
-          )
-          .setFooter({ text: 'Thank you for your patience!', iconURL: client.user.displayAvatarURL() })
-          .setTimestamp();
-
-        await interaction.reply({ embeds: [embed] });
         break;
       }
     }
